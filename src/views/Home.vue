@@ -16,6 +16,8 @@
     <pre>{{ codeState }}</pre>
     // Selectors
     <pre>{{ codeSelector }}</pre>
+    // Use selectors
+    <pre>{{ codeSelectorUse }}</pre>
   </div>
 </template>
 
@@ -33,7 +35,7 @@ export interface ReduxType {
   type: string;
   nullable: boolean;
   default: string;
-  condition?: string
+  condition?: string;
 }
 
 export interface ReduxEvent {
@@ -94,7 +96,31 @@ export default class Home extends Vue {
             type: "UserShort",
             nullable: true,
             default: "undefined",
-            condition: 'trip_direction == RequestTripDirection.ABROAD'
+            condition: "trip_direction == RequestTripDirection.ABROAD",
+          },
+        ],
+      },
+      {
+        name: "is_rhr",
+        type: "update",
+        payload: [
+          {
+            name: "is_rhr",
+            type: "boolean",
+            nullable: false,
+            default: "false",
+          },
+        ],
+      },
+      {
+        name: "seconded",
+        type: "update",
+        payload: [
+          {
+            name: "seconded",
+            type: "User",
+            nullable: true,
+            default: "undefined",
           },
         ],
       },
@@ -139,17 +165,29 @@ export default class Home extends Vue {
   }
 
   getReducerName(item: Redux) {
-    return _.camelCase(_.camelCase(item.name))
-      .split(" ")
-      .join("");
+    return _.camelCase(_.camelCase(item.name)).split(" ").join("");
   }
 
   getNameStateInterface(item: Redux) {
     return `I${this.getNameRedux(item, "State")}`;
   }
 
+  eventReset(): ReduxEvent {
+    return {
+      name: "reset",
+      type: "update",
+      payload: _.flattenDeep(this.redux.events.map((item) => item.payload)),
+    };
+  }
+
+  get allEvents(): ReduxEvent[] {
+    if (this.redux.events) return [...this.redux.events, this.eventReset()];
+
+    return [];
+  }
+
   get codeType() {
-    return `${this.redux.events
+    return `${this.allEvents
       .map(
         (item) =>
           `const ${this.getActionNameConst(item)} = "${this.getActionNameConst(
@@ -162,7 +200,7 @@ export default class Home extends Vue {
   }
 
   get codeTypeInterface() {
-    return `${this.redux.events
+    return `${this.allEvents
       .map(
         (item) => `interface ${this.getActionInterfaceName(item)} {
   type: typeof ${this.getActionNameConst(item)};
@@ -177,7 +215,7 @@ export default class Home extends Vue {
 
   get codeTypeInterfaceResult() {
     return `export type ${this.getNameRedux(this.redux, "ActionType")} = 
-  ${this.redux.events
+  ${this.allEvents
     .map((item) => `| ${this.getActionInterfaceName(item)}`)
     .join("\n  ")}`;
   }
@@ -191,14 +229,16 @@ export default class Home extends Vue {
   }
 
   get codeAction() {
-    return this.redux.events
+    return this.allEvents
       .map(
-        (item) => `export function ${this.getActionName(item)}(${item.payload
+        (item) => `export function ${this.getActionName(
+          item
+        )}(params: {${item.payload
           .map((item) => this.getNameVariableType(item))
-          .join(", ")}): ${this.getActionInterfaceName(item)} {
+          .join(", ")}}): ${this.getActionInterfaceName(item)} {
   return {
     type: ${this.getActionNameConst(item)},
-    ${item.payload.map((item) => `${item.name}: ${item.condition ? `${item.condition} ? ${item.name} : undefined` : item.name }`).join(`,\n    `)}
+    ...params,
   };
 }`
       )
@@ -221,7 +261,7 @@ export default class Home extends Vue {
       "ActionType"
     )}): ${this.getNameStateInterface(this.redux)} {
   switch (action.type) {
-    ${this.redux.events
+    ${this.allEvents
       .map(
         (item) => `case ${this.getActionNameConst(item)}:
       return {
@@ -244,17 +284,42 @@ export default class Home extends Vue {
     return _.flattenDeep(this.redux.events.map((item) => item.payload))
       .map(
         (item) =>
-          `export const select${this.getNameRedux(this.redux, "")}${_.startCase(
+          `export const ${this.getUseSelectorName(
+            this.redux,
+            item
+          )} = (state: RootState) => state.${this.getReducerName(this.redux)}.${
             item.name
-          )
-            .split(" ")
-            .join("")} = (state: RootState) => state.${this.getReducerName(
-            this.redux
-          )}.${item.name};\n`
+          };\n`
       )
       .join("");
 
     return `export const selectRequestLiveMvz = (state: RootState) => state.requestLive.mvz;`;
+  }
+
+  getUseSelectorName(redux: Redux, event: ReduxType) {
+    return `select${this.getNameRedux(redux, "")}${_.startCase(event.name)
+      .split(" ")
+      .join("")}`;
+  }
+
+  getSelectorName(redux: Redux, event: ReduxType) {
+    const nemeRedux = _.camelCase(_.camelCase(redux.name)
+      .split(" ")
+      .join(""));
+
+      const nameEvent = _.startCase(event.name)
+      .split(" ")
+      .join("");
+
+    return `${nemeRedux}${nameEvent}`;
+  }
+
+  get codeSelectorUse() {
+    return '/*\n' + _.flattenDeep(this.redux.events.map((item) => item.payload))
+      .map((item) => `const ${this.getSelectorName(this.redux, item)} = useSelector(${this.getUseSelectorName(this.redux, item)});\n`)
+      .join("") + '*/';
+
+    return `const requestLiveIsRhr = useSelector(selectRequestLiveIsRhr);`;
   }
 }
 </script>
